@@ -13,8 +13,8 @@ Before running this sample, you will need the following:
 To run this application, you first need to clone this repo and then enter into this directory:
 
 ```bash
-git clone https://github.com/okta/samples-golang.git
-cd samples-golang/okta-hosted-login
+git clone git@github.com:Neal910/okta-samples-golang.git
+cd okta-samples-golang/okta-hosted-login
 ```
 
 Then install dependencies:
@@ -26,14 +26,14 @@ go get
 You also need to gather the following information from the Okta Developer Console:
 
 - **Client ID** and **Client Secret** - These can be found on the "General" tab of the Web application that you created earlier in the Okta Developer Console.
-- **Issuer** - This is the URL of the authorization server that will perform authentication.  All Developer Accounts have a "default" authorization server.  The issuer is a combination of your Org URL (found in the upper right of the console home page) and `/oauth2/default`. For example, `https://dev-1234.oktapreview.com/oauth2/default`.
+- **Issuer** - This is the URL of the authorization server that will perform authentication.
 
 Now that you have the information from your organization that you need, copy the [`.env.dist`](.env.dist) to `.env` and fill in the information you gathered.
 
 ```bash
 CLIENT_ID={clientId}
 CLIENT_SECRET={clientSecret}
-ISSUER=https://{yourOktaDomain}/oauth2/default
+ISSUER=https://{yourOktaDomain}
 ```
 
 Now start the app server:
