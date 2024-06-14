@@ -8,13 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
 
 	"github.com/gorilla/sessions"
-	verifier "github.com/okta/okta-jwt-verifier-golang"
+	verifier "github.com/okta/okta-jwt-verifier-golang/v2"
 	oktaUtils "github.com/okta/samples-golang/okta-hosted-login/utils"
 )
 
@@ -41,7 +41,7 @@ func main() {
 
 	http.HandleFunc("/", HomeHandler)
 	http.HandleFunc("/login", LoginHandler)
-	http.HandleFunc("/authorization-code/callback", AuthCodeCallbackHandler)
+	http.HandleFunc("/auth/okta/callback", AuthCodeCallbackHandler)
 	http.HandleFunc("/profile", ProfileHandler)
 	http.HandleFunc("/logout", LogoutHandler)
 
@@ -77,11 +77,11 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	q.Add("response_type", "code")
 	q.Add("response_mode", "query")
 	q.Add("scope", "openid profile email")
-	q.Add("redirect_uri", "http://localhost:8080/authorization-code/callback")
+	q.Add("redirect_uri", "http://localhost:8080/auth/okta/callback")
 	q.Add("state", state)
 	q.Add("nonce", nonce)
 
-	redirectPath = os.Getenv("ISSUER") + "/v1/authorize?" + q.Encode()
+	redirectPath = os.Getenv("ISSUER") + "/oauth2/v1/authorize?" + q.Encode()
 
 	http.Redirect(w, r, redirectPath, http.StatusFound)
 }
@@ -110,10 +110,10 @@ func AuthCodeCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 
-	_, verificationError := verifyToken(exchange.IdToken)
+	_, verificationError := verifyToken(exchange.AccessToken)
 
 	if verificationError != nil {
-		fmt.Println(verificationError)
+		fmt.Printf("verification error: %s", verificationError)
 	}
 
 	if verificationError == nil {
@@ -121,8 +121,8 @@ func AuthCodeCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		session.Values["access_token"] = exchange.AccessToken
 
 		session.Save(r, w)
+		fmt.Println("session saved !!!")
 	}
-
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -160,9 +160,9 @@ func exchangeCode(code string, r *http.Request) Exchange {
 	q := r.URL.Query()
 	q.Add("grant_type", "authorization_code")
 	q.Set("code", code)
-	q.Add("redirect_uri", "http://localhost:8080/authorization-code/callback")
+	q.Add("redirect_uri", "http://localhost:8080/auth/okta/callback")
 
-	url := os.Getenv("ISSUER") + "/v1/token?" + q.Encode()
+	url := os.Getenv("ISSUER") + "/oauth2/v1/token?" + q.Encode()
 
 	req, _ := http.NewRequest("POST", url, bytes.NewReader([]byte("")))
 	h := req.Header
@@ -174,7 +174,7 @@ func exchangeCode(code string, r *http.Request) Exchange {
 
 	client := &http.Client{}
 	resp, _ := client.Do(req)
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	var exchange Exchange
 	json.Unmarshal(body, &exchange)
@@ -201,7 +201,7 @@ func getProfileData(r *http.Request) map[string]string {
 		return m
 	}
 
-	reqUrl := os.Getenv("ISSUER") + "/v1/userinfo"
+	reqUrl := os.Getenv("ISSUER") + "/oauth2/v1/userinfo"
 
 	req, _ := http.NewRequest("GET", reqUrl, bytes.NewReader([]byte("")))
 	h := req.Header
@@ -210,7 +210,7 @@ func getProfileData(r *http.Request) map[string]string {
 
 	client := &http.Client{}
 	resp, _ := client.Do(req)
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	json.Unmarshal(body, &m)
 
@@ -219,20 +219,24 @@ func getProfileData(r *http.Request) map[string]string {
 
 func verifyToken(t string) (*verifier.Jwt, error) {
 	tv := map[string]string{}
-	tv["nonce"] = nonce
-	tv["aud"] = os.Getenv("CLIENT_ID")
+	tv["aud"] = os.Getenv("ISSUER")
+	tv["cid"] = os.Getenv("CLIENT_ID")
 	jv := verifier.JwtVerifier{
 		Issuer:           os.Getenv("ISSUER"),
 		ClaimsToValidate: tv,
 	}
 
-	result, err := jv.New().VerifyIdToken(t)
+	v, err := jv.New()
 	if err != nil {
-		return nil, fmt.Errorf("%s", err)
+		return nil, fmt.Errorf("creating new verifier error: %s", err)
+	}
+	token, err := v.VerifyAccessToken(t)
+	if err != nil {
+		return nil, fmt.Errorf("verifying ID token error: %s", err)
 	}
 
-	if result != nil {
-		return result, nil
+	if token != nil {
+		return token, nil
 	}
 
 	return nil, fmt.Errorf("token could not be verified: %s", "")
